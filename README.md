@@ -17,3 +17,7 @@ Run main program
 ```
 python3 main.py
 ```
+
+Should show something like this:
+
+<img src=example.png>
