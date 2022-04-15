@@ -37,7 +37,7 @@ params_default = dict(
     V_h             = -43.0,     # H current
     V_l             =  10.0,     # Leak
     I_app           =   1.0,
-    I_spike         =  5.0,
+    I_pulse10ms     =  5.0,
 )
 
 class Window(QWidget):
@@ -71,7 +71,7 @@ class Window(QWidget):
             slider = QSlider()
             slider.setMinimum(0)
             slider.setMaximum(500)
-            if k in ('I_app', 'I_spike'):
+            if k in ('I_app', 'I_pulse10ms'):
                 slider.setValue(0)
             else:
                 slider.setValue(int(slider.maximum() * part))
@@ -120,7 +120,7 @@ class Window(QWidget):
 
     def plot(self, **params):
         np.seterr(all='raise')
-        export_params = {k: round(v, 8) for k, v in params.items() if k != 'I_spike'}
+        export_params = {k: round(v, 8) for k, v in params.items() if k != 'I_pulse10ms'}
         if self.export_fmt_checkbox.isChecked():
             self.textedit_params.setText(json.dumps(export_params))
         else:
@@ -146,9 +146,9 @@ class Window(QWidget):
         amp = V_soma.ptp()
         self.graphWidget.clear()
         self.graphWidget.plot(t, V_dend, color='k')
-        self.graphWidget.setRange(xRange=[t[0], t[-1]], yRange=[-100, 20])
+        self.graphWidget.setRange(xRange=[t[0], t[-1]], yRange=[-100, 100])
         self.graphWidget.setLabels(title='de Gruijl model with modified H gate', bottom='Time (ms)', left='Soma potential (mV)')
-        if np.isclose(params['I_spike'], 0):
+        if np.isclose(params['I_pulse10ms'], 0):
             self.toplabel.setText(f'{freq:.1f} Hz, {amp:.1f} mV')
         else:
             self.toplabel.setText(f'{amp:.1f} mV')

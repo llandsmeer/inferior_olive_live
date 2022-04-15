@@ -27,7 +27,7 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
     V_h             = -43.0,     # H current
     V_l             =  10.0,     # Leak
     I_app           =   0.0,
-    I_spike         =   0.0,
+    I_pulse10ms     =   0.0,
     ):
 
     # Soma state
@@ -63,39 +63,40 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
         # Low-threshold calcium
         soma_Ical   = g_CaL * soma_k * soma_k * soma_k * soma_l * (V_soma - V_Ca)
 
-        soma_k_inf  = 1.0 / (1.0 + np.exp(-0.23809523809*V_soma - 14.5238))
-        soma_l_inf  = 1.0 / (1.0 + np.exp( 0.11764705882*V_soma + 10.0))
+        soma_k_inf  = 1.0 / (1.0 + np.exp(-0.23809523809*V_soma - 14.5238)) # -(V_soma + 61) / 4.2
+        soma_l_inf  = 1.0 / (1.0 + np.exp( 0.11764705882*V_soma + 10.0588)) #  (Vsoma + 85.5 / 8.5)
+        #                               (Vsoma + 160) / 30                           (Vsoma + 84) / 7.3
         soma_tau_l  = (20.0 * np.exp(0.033333*V_soma + 5.333333) / (1.0  + np.exp(0.136986*V_soma + 11.506849))) + 35.0
 
         soma_dk_dt  = soma_k_inf - soma_k
         soma_dl_dt  = (soma_l_inf - soma_l) / soma_tau_l
-        soma_k                  = delta * soma_dk_dt + soma_k
-        soma_l                  = delta * soma_dl_dt + soma_l
+        soma_k      = delta * soma_dk_dt + soma_k
+        soma_l      = delta * soma_dl_dt + soma_l
 
         # Sodium   (watch out direct gate m)
-        soma_m_inf  = 1.0 / (1.0 + np.exp(-0.1818181818*V_soma - 5.45454545))
+        soma_m_inf  = 1.0 / (1.0 + np.exp(-0.1818181818*V_soma - 5.45454545))  # -(Vsoma + 30) / 5.5
         soma_Ina    = g_Na_s * soma_m_inf * soma_m_inf * soma_m_inf * soma_h * (V_soma - V_Na)
-        soma_tau_h  =  3.0 * np.exp(0.0303030303*V_soma + 1.21212121212)
-        soma_h_inf  = 1.0 / (1.0 + np.exp(0.1724137931*V_soma + 12.0689655))
-        soma_dh_dt  = (soma_h_inf - soma_h) * soma_tau_h
-        soma_h = soma_h + delta * soma_dh_dt
+        soma_tau_h  = 3.0 * np.exp(0.0303030303*V_soma + 1.21212121212)
+        soma_h_inf  = 1.0 / (1.0 + np.exp(0.1724137931*V_soma + 12.0689655)) # 70, 5.8
+        soma_dh_dt  = (soma_h_inf - soma_h) / soma_tau_h
+        soma_h      = soma_h + delta * soma_dh_dt
 
         # Potassium, slow component
         soma_Ikdr   = g_Kdr_s * soma_n * soma_n * soma_n * soma_n * (V_soma - V_K)
         soma_n_inf  = 1.0 / ( 1.0 + np.exp( -0.1*V_soma - 0.3))
         soma_tau_n  = 5.0 + (47.0 * np.exp(0.00111111*V_soma + 0.0555555555))
-        soma_dn_dt  = soma_n_inf - soma_n / soma_tau_n
-        soma_n = delta * soma_dn_dt + soma_n
+        soma_dn_dt  = (soma_n_inf - soma_n) / soma_tau_n
+        soma_n      = delta * soma_dn_dt + soma_n
 
         # Potassium, fast component
         soma_Ik      = g_K_s * soma_x**4 * (V_soma - V_K)
         soma_alpha_x = (0.13 * V_soma + 3.25) / (1.0 - np.exp(-0.1*V_soma - 2.5))
         soma_beta_x  = 1.69 * np.exp(-0.0125*V_soma -0.4375)
-        soma_tau_x   = soma_alpha_x + soma_beta_x
-        soma_x_inf   = soma_alpha_x / soma_tau_x
+        soma_tau_x_inv=soma_alpha_x + soma_beta_x
+        soma_x_inf   = soma_alpha_x / soma_tau_x_inv
 
-        soma_dx_dt   = (soma_x_inf - soma_x) * soma_tau_x
-        soma_x  = delta * soma_dx_dt + soma_x
+        soma_dx_dt   = (soma_x_inf - soma_x) * soma_tau_x_inv
+        soma_x       = delta * soma_dx_dt + soma_x
 
         if at >= 0:
             iv_trace[at, 0] = soma_Ik
@@ -118,16 +119,16 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
 
         # Interaction Current
         I_sa           =  (g_int / p2) * (V_axon - V_soma)
-        axon_I_interact=   I_sa
+        axon_I_interact=  I_sa
 
-        # Channelss
+        # Channels
         # Sodium  (watch out direct gate !!!)
         axon_m_inf     =  (1.0 / (1.0 + np.exp(-0.18181818*V_axon -5.45454545)))
         axon_Ina       =  g_Na_a  * axon_m_inf * axon_m_inf * axon_m_inf * axon_Sodium_h * (V_axon - V_Na)
         axon_h_inf     =  (1.0 / (1.0 + np.exp(0.1724137931*V_axon + 10.344827586)))
         axon_tau_h     =  1.5 * np.exp(-0.0303030303*V_axon - 1.212121)
-        axon_dh_dt     =  ((axon_h_inf - axon_Sodium_h) /axon_tau_h)
-        axon_Sodium_h              =  axon_Sodium_h + delta * axon_dh_dt
+        axon_dh_dt     =  (axon_h_inf - axon_Sodium_h) / axon_tau_h
+        axon_Sodium_h  =  axon_Sodium_h + delta * axon_dh_dt
 
         # Potassium
         axon_Ik        =  g_K_a * (axon_Potassium_x)**4 * (V_axon - V_K)
@@ -136,7 +137,7 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
         axon_x_inf     =  (axon_alpha_x / (axon_alpha_x + axon_beta_x))
         axon_tau_x     =  (1.0 / (axon_alpha_x + axon_beta_x))
         axon_dx_dt     =  ((axon_x_inf - axon_Potassium_x) / axon_tau_x)
-        axon_Potassium_x           =  delta * axon_dx_dt + axon_Potassium_x
+        axon_Potassium_x= delta * axon_dx_dt + axon_Potassium_x
 
         if at >= 0:
             iv_trace[at, 5] = axon_Ina
@@ -153,44 +154,44 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
         nonlocal V_dend, dend_Ca2Plus, dend_Calcium_r, dend_Potassium_s, dend_Hcurrent_q
         # Dendritic Components
         # Application current
-        dend_I_application = -I_app + (-I_spike if \
+        dend_I_application = -I_app + (-I_pulse10ms if \
                  200 * sim_seconds < t - 1000 * skip_initial_transient_seconds < 210 * sim_seconds \
                 else 0.0)
 
         # Leak current
-        dend_I_leak    =  g_ld * (V_dend - V_l)
+        dend_I_leak     =  g_ld * (V_dend - V_l)
 
         # Interaction Current
-        dend_I_interact        =  (g_int / (1.0 - p1)) * (V_dend - V_soma)
+        dend_I_interact =  (g_int / (1.0 - p1)) * (V_dend - V_soma)
 
         # Channels
         # High-threshold calcium
-        dend_Icah        =  g_CaH * dend_Calcium_r * dend_Calcium_r * (V_dend - V_Ca)
-        dend_alpha_r     =  (1.7 / (1.0 + np.exp(-0.071942446*V_dend + 0.35971223021)))
-        dend_beta_r      =  (0.02*V_dend + 0.17) / (np.exp(0.2*V_dend + 1.7) - 1.0)
-        dend_tau_r       =  (dend_alpha_r + dend_beta_r)
-        dend_r_inf       =  (dend_alpha_r / dend_tau_r)
-        dend_dr_dt       =  (dend_r_inf - dend_Calcium_r) * dend_tau_r * 0.2
-        dend_Calcium_r               =  delta * dend_dr_dt + dend_Calcium_r
+        dend_Icah       =  g_CaH * dend_Calcium_r * dend_Calcium_r * (V_dend - V_Ca)
+        dend_alpha_r    =  (1.7 / (1.0 + np.exp(-0.071942446*V_dend + 0.35971223021)))
+        dend_beta_r     =  (0.02*V_dend + 0.17) / (np.exp(0.2*V_dend + 1.7) - 1.0)
+        dend_tau_r_inv5 =  (dend_alpha_r + dend_beta_r) # tau = 5 / (alpha + beta)
+        dend_r_inf      =  dend_alpha_r / dend_tau_r_inv5
+        dend_dr_dt      =  (dend_r_inf - dend_Calcium_r) * dend_tau_r_inv5 * 0.2
+        dend_Calcium_r  =  delta * dend_dr_dt + dend_Calcium_r
 
         # Calcium dependent potassium
-        dend_Ikca        =  g_K_Ca * dend_Potassium_s * (V_dend - V_K)
-        dend_alpha_s     =  (0.00002 * dend_Ca2Plus) * (0.00002 * dend_Ca2Plus < 0.01) + 0.01*((0.00002 * dend_Ca2Plus)> 0.01)
-        dend_tau_s       =  dend_alpha_s + 0.015
-        dend_s_inf       =  (dend_alpha_s / dend_tau_s)
-        dend_ds_dt       =  (dend_s_inf - dend_Potassium_s) * dend_tau_s
-        dend_Potassium_s             =  delta * dend_ds_dt + dend_Potassium_s
+        dend_Ikca       =  g_K_Ca * dend_Potassium_s * (V_dend - V_K)
+        dend_alpha_s    =  (0.00002 * dend_Ca2Plus) * (0.00002 * dend_Ca2Plus < 0.01) + 0.01*((0.00002 * dend_Ca2Plus)> 0.01)
+        dend_tau_s_inv  =  dend_alpha_s + 0.015
+        dend_s_inf      =  (dend_alpha_s / dend_tau_s_inv)
+        dend_ds_dt      =  (dend_s_inf - dend_Potassium_s) * dend_tau_s_inv
+        dend_Potassium_s=  delta * dend_ds_dt + dend_Potassium_s
 
         # calcium in general
-        dCa_dt      =  -3.0 * dend_Icah - 0.075 * dend_Ca2Plus
-        dend_Ca2Plus            =  delta * dCa_dt + dend_Ca2Plus
+        dCa_dt          =  -3.0 * dend_Icah - 0.075 * dend_Ca2Plus
+        dend_Ca2Plus    =  delta * dCa_dt + dend_Ca2Plus
 
         # h current
-        dend_Ih     =  g_h * dend_Hcurrent_q * (V_dend - V_h)
-        q_inf       =  1.0 / (1.0 + np.exp(0.25*V_dend + 20.0))
-        tau_q       =  np.exp(-0.086*V_dend - 14.6) + np.exp(0.070*V_dend - 1.87)
-        dq_dt       =  (q_inf - dend_Hcurrent_q) * tau_q
-        dend_Hcurrent_q         =  delta * dq_dt + dend_Hcurrent_q
+        dend_Ih         =  g_h * dend_Hcurrent_q * (V_dend - V_h)
+        q_inf           =  1.0 / (1.0 + np.exp(0.25*V_dend + 20.0))
+        tau_q_inv       =  np.exp(-0.086*V_dend - 14.6) + np.exp(0.070*V_dend - 1.87)
+        dq_dt           =  (q_inf - dend_Hcurrent_q) * tau_q_inv
+        dend_Hcurrent_q =  delta * dq_dt + dend_Hcurrent_q
 
         if at >= 0:
             iv_trace[at, 8] = dend_Icah
