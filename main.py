@@ -1,12 +1,14 @@
+import sys
+import json
+import scipy.signal
+import numpy as np
+
+sys.path.append('/home/llandsmeer/Repos/notyet/iolive')
+
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QLabel
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QLabel, QTextEdit, QCheckBox
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
-import scipy.signal
-
-import sys
-import numpy as np
-sys.path.append('/home/llandsmeer/Repos/notyet/iolive')
 
 import iocell
 
@@ -53,7 +55,7 @@ class Window(QWidget):
         self.sliders = {}
         self.slider_labels = {}
         self.setWindowTitle('IOLive (Figure 1)')
-        self.setGeometry(300, 300, 640, 480)
+        self.setGeometry(100, 100, 800, 800)
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         self.graphWidget = pg.PlotWidget()
@@ -91,6 +93,13 @@ class Window(QWidget):
             }
             ''')
             slider.valueChanged.connect(self.on_slider_update)
+        self.export_fmt_checkbox = QCheckBox('Export as .json?')
+        (slider_layout_left if i + 1 % 2 == 0 else slider_layout_right).addRow(QLabel(''), self.export_fmt_checkbox)
+        self.export_fmt_checkbox.stateChanged.connect(self.on_slider_update)
+        # add a readonly multiline text edit
+        self.textedit_params = QTextEdit()
+        self.textedit_params.setReadOnly(True)
+        self.layout.addWidget(self.textedit_params)
         self.show()
 
     def on_slider_update(self):
@@ -102,6 +111,12 @@ class Window(QWidget):
 
     def plot(self, **params):
         np.seterr(all='raise')
+        export_params = {k: round(v, 4) for k, v in params.items() if k != 'I_spike'}
+        if self.export_fmt_checkbox.isChecked():
+            self.textedit_params.setText(json.dumps(export_params))
+        else:
+            s = ';'.join(f'{k}={v}' for k, v in export_params.items())
+            self.textedit_params.setText(s)
         try:
             iv_trace = iocell.simulate(skip_initial_transient_seconds=1, sim_seconds=1, **params)
         except Exception as ex:
@@ -123,9 +138,11 @@ class Window(QWidget):
         self.graphWidget.clear()
         self.graphWidget.plot(t, V_dend, color='k')
         self.graphWidget.setRange(xRange=[t[0], t[-1]], yRange=[-100, 20])
-        #self.graphWidget.xlabel('Time (ms)')
-        #self.graphWidget.ylabel('Soma potential (mV)')
-        self.toplabel.setText(f'{freq:.1f} Hz | {amp:.1f} mV')
+        self.graphWidget.setLabels(title='de Gruijl model with modified H gate', bottom='Time (ms)', left='Soma potential (mV)')
+        if np.isclose(params['I_spike'], 0):
+            self.toplabel.setText(f'{freq:.1f} Hz, {amp:.1f} mV')
+        else:
+            self.toplabel.setText(f'{amp:.1f} mV')
 
 def main():
     app = QApplication([])
