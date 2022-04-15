@@ -6,7 +6,7 @@ import numpy as np
 sys.path.append('/home/llandsmeer/Repos/notyet/iolive')
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QLabel, QTextEdit, QCheckBox
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QLabel, QTextEdit, QCheckBox, QComboBox
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
 
@@ -95,20 +95,54 @@ class Window(QWidget):
             }
             ''')
             slider.valueChanged.connect(self.on_slider_update)
-        self.reset_button = QPushButton('Reset')
-        self.reset_button.clicked.connect(self.on_reset)
-        self.export_fmt_checkbox = QCheckBox('Export as .json?')
-        (slider_layout_left if i + 1 % 2 == 0 else slider_layout_right).addRow(self.reset_button, self.export_fmt_checkbox)
-        self.export_fmt_checkbox.stateChanged.connect(self.on_slider_update)
+        # Last row (settings)
+        settings_layout = QHBoxLayout()
+        #
+        reset_button = QPushButton('Reset')
+        reset_button.clicked.connect(self.on_reset)
+        settings_layout.addWidget(reset_button)
+        #
+        randomize_button = QPushButton('Randomize')
+        randomize_button.clicked.connect(self.on_randomize)
+        settings_layout.addWidget(randomize_button)
+        #
+        self.draw_dropdown = QComboBox()
+        self.draw_dropdown.addItems([
+            'V(soma)', 'V(dend)', 'V(axon)', 
+            'I(k,soma)', 'I(kdr,soma)', 'I(na,soma)', 'I(cal,soma)',
+            'I(na,axon)', 'I(k,axon)',
+            'I(cah,dend)', 'I(kca,dend)', 'I(h,dend)'
+            ])
+        self.draw_dropdown.currentTextChanged.connect(self.on_slider_update)
+        settings_layout.addWidget(self.draw_dropdown)
+        #
+        self.export_fmt_dropdown = QComboBox()
+        self.export_fmt_dropdown.addItems(['Export Assignments', 'Export JSON', 'Export C++ struct'])
+        self.export_fmt_dropdown.currentTextChanged.connect(self.on_slider_update)
+        settings_layout.addWidget(self.export_fmt_dropdown)
+        #
+        (slider_layout_left if i + 1 % 2 == 0 else slider_layout_right).addRow(settings_layout)
         # add a readonly multiline text edit
         self.textedit_params = QTextEdit()
         self.textedit_params.setReadOnly(True)
         self.layout.addWidget(self.textedit_params)
         self.show()
 
+    def on_randomize(self):
+        for k in params_default:
+            if not k.startswith('g_'):
+                continue
+            v = np.random.normal(self.sliders[k].value()/self.sliders[k].maximum(), 0.0055)*self.sliders[k].maximum()
+            v = int(max(0, min(v, self.sliders[k].maximum())))
+            self.sliders[k].setValue(v)
+        pass
+
     def on_reset(self):
         for k, v in params_default.items():
-            self.sliders[k].setValue(int(self.sliders[k].maximum() * part))
+            if k in ('I_app', 'I_pulse10ms'):
+                self.sliders[k].setValue(0)
+            else:
+                self.sliders[k].setValue(int(self.sliders[k].maximum() * part))
         self.on_slider_update()
 
     def on_slider_update(self):
@@ -120,12 +154,22 @@ class Window(QWidget):
 
     def plot(self, **params):
         np.seterr(all='raise')
-        export_params = {k: round(v, 8) for k, v in params.items() if k != 'I_pulse10ms'}
-        if self.export_fmt_checkbox.isChecked():
-            self.textedit_params.setText(json.dumps(export_params))
-        else:
+        export_params = {k: round(v, 8) for k, v in sorted(params.items()) if k != 'I_pulse10ms'}
+        export_fmt = self.export_fmt_dropdown.currentIndex()
+        if export_fmt == 0:
+            # k=v; k=v; k=v; ...
             s = ';'.join(f'{k}={v}' for k, v in export_params.items())
             self.textedit_params.setText(s)
+        elif export_fmt == 1:
+            # json export
+            self.textedit_params.setText(json.dumps(export_params))
+        elif export_fmt == 2:
+            # C++ struct export
+            s = '\n'.join(f'    double {k} = {v};' for k, v in export_params.items())
+            s = f'struct iocell {{\n{s}\n}};'
+            self.textedit_params.setText(s)
+        else:
+            raise ValueError(f'Unknown export format: {export_fmt}')
         try:
             iv_trace = iocell.simulate(skip_initial_transient_seconds=1, sim_seconds=1, **params)
         except Exception as ex:
@@ -137,21 +181,43 @@ class Window(QWidget):
         (soma_Ik, soma_Ikdr, soma_Ina, soma_Ical, V_soma,
          axon_Ina, axon_Ik, V_axon,
          dend_Icah, dend_Ikca, dend_Ih, V_dend, t) = iv_trace.T
-        idx = scipy.signal.find_peaks(V_soma)[0]
+        # get statistics
+        idx = scipy.signal.find_peaks(V_soma, distance=5)[0]
+        peak_height = V_soma.max()
+        idx = idx[abs(V_soma[idx] - peak_height) < 5]
         if len(idx) > 2:
             period = np.diff(t[idx]).mean() / 1000
             freq = 1 / period if period > 0 else 0
         else:
             freq = 0
         amp = V_soma.ptp()
+        # plotting
         self.graphWidget.clear()
-        self.graphWidget.plot(t, V_dend, color='k')
-        self.graphWidget.setRange(xRange=[t[0], t[-1]], yRange=[-100, 100])
-        self.graphWidget.setLabels(title='de Gruijl model with modified H gate', bottom='Time (ms)', left='Soma potential (mV)')
+        pg.setConfigOption('foreground', 'w')
+        selected = str(self.draw_dropdown.currentText())
+        if selected.startswith('V'):
+            if   selected == 'V(soma)': V = V_soma
+            elif selected == 'V(axon)': V = V_axon
+            elif selected == 'V(dend)': V = V_dend
+            self.graphWidget.plot(t, V, color='k')
+            self.graphWidget.setRange(xRange=[t[0], t[-1]], yRange=[-100, 100])
+            self.graphWidget.setLabels(title='Modified de Gruijl inferior olive model', bottom='Time (ms)', left='Membrane potential (mV)')
+        elif selected.startswith('I'):
+            if   selected == 'I(k,soma)':   I = soma_Ik
+            elif selected == 'I(kdr,soma)': I = soma_Ikdr
+            elif selected == 'I(na,soma)':  I = soma_Ina
+            elif selected == 'I(cal,soma)': I = soma_Ical
+            elif selected == 'I(na,axon)':  I = axon_Ina
+            elif selected == 'I(k,axon)':   I = axon_Ik
+            elif selected == 'I(cah,dend)': I = dend_Icah
+            elif selected == 'I(kca,dend)': I = dend_Ikca
+            elif selected == 'I(h,dend)':   I = dend_Ih
+            self.graphWidget.plot(t, I, color='k')
+            self.graphWidget.setLabels(title='Modified de Gruijl inferior olive model', bottom='Time (ms)', left='Current')
         if np.isclose(params['I_pulse10ms'], 0):
-            self.toplabel.setText(f'{freq:.1f} Hz, {amp:.1f} mV')
+            self.toplabel.setText(f'{freq:.1f} Hz, {amp:.1f} mVpp')
         else:
-            self.toplabel.setText(f'{amp:.1f} mV')
+            self.toplabel.setText(f'{amp:.1f} mVpp')
 
 def main():
     app = QApplication([])
