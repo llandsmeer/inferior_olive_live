@@ -14,7 +14,6 @@ import iocell
 
 part = 0.2
 
-
 params_default = dict(
     g_int           =   0.13,    # Cell internal conductance  -- now a parameter (0.13)
     p1              =   0.25,    # Cell surface ratio soma/dendrite
@@ -71,8 +70,11 @@ class Window(QWidget):
         for i, (k, v) in enumerate(params_default.items()):
             slider = QSlider()
             slider.setMinimum(0)
-            slider.setMaximum(1000)
-            slider.setValue(int(slider.maximum() * part))
+            slider.setMaximum(500)
+            if k in ('I_app', 'I_spike'):
+                slider.setValue(0)
+            else:
+                slider.setValue(int(slider.maximum() * part))
             slider.setOrientation(Qt.Horizontal)
             slider_label = QLabel(f'{k} ({v})')
             if i % 2 == 0:
@@ -93,14 +95,21 @@ class Window(QWidget):
             }
             ''')
             slider.valueChanged.connect(self.on_slider_update)
+        self.reset_button = QPushButton('Reset')
+        self.reset_button.clicked.connect(self.on_reset)
         self.export_fmt_checkbox = QCheckBox('Export as .json?')
-        (slider_layout_left if i + 1 % 2 == 0 else slider_layout_right).addRow(QLabel(''), self.export_fmt_checkbox)
+        (slider_layout_left if i + 1 % 2 == 0 else slider_layout_right).addRow(self.reset_button, self.export_fmt_checkbox)
         self.export_fmt_checkbox.stateChanged.connect(self.on_slider_update)
         # add a readonly multiline text edit
         self.textedit_params = QTextEdit()
         self.textedit_params.setReadOnly(True)
         self.layout.addWidget(self.textedit_params)
         self.show()
+
+    def on_reset(self):
+        for k, v in params_default.items():
+            self.sliders[k].setValue(int(self.sliders[k].maximum() * part))
+        self.on_slider_update()
 
     def on_slider_update(self):
         params = {}
@@ -111,7 +120,7 @@ class Window(QWidget):
 
     def plot(self, **params):
         np.seterr(all='raise')
-        export_params = {k: round(v, 4) for k, v in params.items() if k != 'I_spike'}
+        export_params = {k: round(v, 8) for k, v in params.items() if k != 'I_spike'}
         if self.export_fmt_checkbox.isChecked():
             self.textedit_params.setText(json.dumps(export_params))
         else:
