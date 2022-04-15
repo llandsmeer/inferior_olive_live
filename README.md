@@ -3,13 +3,13 @@
 Install standard numerical packages
 
 ```
-pip3 install -U matplotlib numba numpy scipy
+python3 -m pip install -U matplotlib numba numpy scipy
 ```
 
 Install user interface packages
 
 ```
-pip3 install -U pyqt5 pyqtgraph
+python3 -m pip install -U pyqt5 pyqtgraph
 ```
 
 Run main program
