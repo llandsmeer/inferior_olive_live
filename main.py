@@ -4,6 +4,7 @@ import scipy.signal
 import numpy as np
 
 sys.path.append('/home/llandsmeer/Repos/notyet/iolive')
+sys.path.append('/home/llandsmeer/repos/llandsmeer/inferior_olive_live')
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QLabel, QTextEdit, QCheckBox, QComboBox
@@ -38,6 +39,7 @@ params_default = dict(
     V_l             =  10.0,     # Leak
     I_app           =   1.0,
     I_pulse10ms     =  5.0,
+    I_noise_amp     =  10.0
 )
 
 class Window(QWidget):
@@ -71,7 +73,7 @@ class Window(QWidget):
             slider = QSlider()
             slider.setMinimum(0)
             slider.setMaximum(500)
-            if k in ('I_app', 'I_pulse10ms'):
+            if k in ('I_app', 'I_pulse10ms', 'I_noise_amp'):
                 slider.setValue(0)
             else:
                 slider.setValue(int(slider.maximum() * part))
@@ -139,7 +141,7 @@ class Window(QWidget):
 
     def on_reset(self):
         for k, v in params_default.items():
-            if k in ('I_app', 'I_pulse10ms'):
+            if k in ('I_app', 'I_pulse10ms', 'I_noise_amp'):
                 self.sliders[k].setValue(0)
             else:
                 self.sliders[k].setValue(int(self.sliders[k].maximum() * part))
@@ -171,7 +173,10 @@ class Window(QWidget):
         else:
             raise ValueError(f'Unknown export format: {export_fmt}')
         try:
-            iv_trace = iocell.simulate(skip_initial_transient_seconds=1, sim_seconds=1, **params)
+            iv_trace = iocell.simulate(
+                    skip_initial_transient_seconds=1, sim_seconds=1,
+                    record_every=4,
+                    **params)
         except Exception as ex:
             self.toplabel.setText(f'{repr(ex)}')
             self.graphWidget.clear()

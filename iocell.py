@@ -3,7 +3,7 @@ import numba
 import numpy as np
 
 @numba.jit(fastmath=False, cache=True, nopython=True)
-def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, record_every=20,
+def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.025, record_every=20,
         # Parameters
         g_int           =   0.13,    # Cell internal conductance  -- now a parameter (0.13)
         p1              =   0.25,    # Cell surface ratio soma/dendrite
@@ -28,6 +28,7 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
         V_l             =  10.0,     # Leak
         I_app           =   0.0,
         I_pulse10ms     =   0.0,
+        I_noise_amp     =   0.0
         ):
 
     # Soma state
@@ -160,7 +161,7 @@ def simulate(skip_initial_transient_seconds=0, sim_seconds=10, delta=0.005, reco
         # CURRENT: Dend application current (I_app, I_pulse10ms)
         dend_I_application = -I_app + (-I_pulse10ms if \
                  200 * sim_seconds < t - 1000 * skip_initial_transient_seconds < 210 * sim_seconds \
-                else 0)
+                else 0) + I_noise_amp * 5 * np.random.normal(0, 1)
 
         # CURRENT: Dend leak current (ld)
         dend_I_leak     =  g_ld * (V_dend - V_l)
